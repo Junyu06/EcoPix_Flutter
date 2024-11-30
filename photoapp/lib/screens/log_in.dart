@@ -39,7 +39,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (cookie != null && server != null) {
       final response = await http.get(
         Uri.parse('$server/protected'),
-        headers: {'Cookie': 'auth_token=$cookie'},
+        headers: {'Cookie': '$cookie'},
       );
 
       if (response.statusCode == 200) {
@@ -81,8 +81,10 @@ class _LoginScreenState extends State<LoginScreen> {
       // Extract the cookie from the response
       final cookie = response.headers['set-cookie'];
       if (cookie != null) {
+        final sessionCookie = cookie.split(';').firstWhere((cookie) => cookie.startsWith('session='));
         // Save the cookie and server address locally
-        await DbHelper.saveCookieAndServer(cookie, server);
+        await DbHelper.saveCookieAndServer(sessionCookie, server);
+        print("Session cookie saved: $sessionCookie");
 
         // Navigate to the HomeScreen
         Navigator.pushReplacement(
