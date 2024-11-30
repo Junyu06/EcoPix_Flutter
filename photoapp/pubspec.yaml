@@ -40,7 +40,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   cached_network_image: ^3.4.1
   cupertino_http: ^1.5.1
-  shared_preferences: ^2.3.2
+  shared_preferences: ^2.3.3
   photo_browser: ^3.0.3
   flutter_map: ^7.0.2
   latlong2: ^0.9.1

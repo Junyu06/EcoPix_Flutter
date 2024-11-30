@@ -5,25 +5,29 @@ import 'package:photoapp/screens/home_screen.dart';
 
 //import 'home_screen'; // homscreen after login
 
-class LoginScreen extends StatefulWidget{
+//import 'package:flutter/cupertino.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+
+class LoginScreen extends StatefulWidget {
   @override
   _LoginScreenState createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen>{
+class _LoginScreenState extends State<LoginScreen> {
   TextEditingController _usernameController = TextEditingController();
   TextEditingController _passwordController = TextEditingController();
   TextEditingController _serverAddressController = TextEditingController();
   bool _isLoading = false;
 
   @override
-  void initState(){
+  void initState() {
     super.initState();
     _checkForCookie();
   }
 
-  //check if the user has a valid cookie saved in the database
-  Future<void> _checkForCookie() async{
+  // Check if the user has a valid cookie saved in the database and validate it with the Flask server
+  Future<void> _checkForCookie() async {
     setState(() {
       _isLoading = true;
     });
@@ -32,75 +36,119 @@ class _LoginScreenState extends State<LoginScreen>{
     String? cookie = data['cookie'];
     String? server = data['server'];
 
-    if (cookie != null && await _validatedCookie(cookie)){
-      Navigator.pushReplacement(
-        context, 
-        CupertinoPageRoute(builder: (context) => HomeScreen()),
+    if (cookie != null && server != null) {
+      final response = await http.get(
+        Uri.parse('$server/protected'),
+        headers: {'Cookie': 'auth_token=$cookie'},
       );
-    } else {
-      setState(() {
-        _isLoading = false; //show login from if cookie is invalid
-      });
+
+      if (response.statusCode == 200) {
+        // If the server confirms the cookie is valid, navigate to the HomeScreen
+        Navigator.pushReplacement(
+          context,
+          CupertinoPageRoute(builder: (context) => HomeScreen()),
+        );
+        return;
+      }
     }
+
+    // If the cookie is invalid or no server is available, show the login form
+    setState(() {
+      _isLoading = false;
+    });
   }
 
-  //dummy cookie validation (replace with real connetion after)
-  Future<bool> _validatedCookie(String cookie) async {
-    await Future.delayed(Duration(seconds: 1));
-    return cookie == "valid_cookie";
-  }
-
-  //simulate login and save coockie and server add in the db
-  Future<void> _login() async{
+  // Log in to the Flask server and save the cookie
+  Future<void> _login() async {
     setState(() {
       _isLoading = true;
     });
 
-    await Future.delayed((Duration(seconds:1)));
-    await DbHelper.saveCookieAndServer("valid_cookie", _serverAddressController.text);
+    final server = _serverAddressController.text;
+    final username = _usernameController.text;
+    final password = _passwordController.text;
 
-    //navigae to the home screen
-    Navigator.pushReplacement(
-      context, 
-      CupertinoPageRoute(builder: (context) => HomeScreen()),
+    final response = await http.post(
+      Uri.parse('$server/login'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'username': username,
+        'password': password,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      // Extract the cookie from the response
+      final cookie = response.headers['set-cookie'];
+      if (cookie != null) {
+        // Save the cookie and server address locally
+        await DbHelper.saveCookieAndServer(cookie, server);
+
+        // Navigate to the HomeScreen
+        Navigator.pushReplacement(
+          context,
+          CupertinoPageRoute(builder: (context) => HomeScreen()),
+        );
+        return;
+      }
+    }
+
+    // If login fails, show an error
+    setState(() {
+      _isLoading = false;
+    });
+    showCupertinoDialog(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: Text('Login Failed'),
+        content: Text('Invalid username or password.'),
+        actions: [
+          CupertinoDialogAction(
+            child: Text('OK'),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ],
+      ),
     );
   }
 
   @override
-  Widget build(BuildContext context){
+  Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
         middle: Text('Login'),
       ),
       child: _isLoading
-        ? Center(child:  CupertinoActivityIndicator(),)//show loading spinner
-        : Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                CupertinoTextField(
-                  controller: _usernameController,
-                  placeholder: 'Username',
-                ),
-                SizedBox(height: 16.0,),
-                CupertinoTextField(
-                  controller: _passwordController,
-                  placeholder: 'Password',
-                ),
-                SizedBox(height: 16.0,),
-                CupertinoTextField(
-                  controller: _serverAddressController,
-                  placeholder: 'Server Address',
-                ),
-                SizedBox(height: 32.0,),
-                CupertinoButton.filled(
-                  child: Text('Login'), 
-                  onPressed: _login,
-                ),
-              ],
+          ? Center(
+              child: CupertinoActivityIndicator(),
+            ) // Show loading spinner
+          : Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CupertinoTextField(
+                    controller: _usernameController,
+                    placeholder: 'Username',
+                  ),
+                  SizedBox(height: 16.0),
+                  CupertinoTextField(
+                    controller: _passwordController,
+                    placeholder: 'Password',
+                  ),
+                  SizedBox(height: 16.0),
+                  CupertinoTextField(
+                    controller: _serverAddressController,
+                    placeholder: 'Server Address',
+                  ),
+                  SizedBox(height: 32.0),
+                  CupertinoButton.filled(
+                    child: Text('Login'),
+                    onPressed: _login,
+                  ),
+                ],
+              ),
             ),
-        )
     );
   }
 }
