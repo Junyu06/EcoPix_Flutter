@@ -49,38 +49,49 @@ class _TimelineScreenState extends State<TimelineScreen> {
   }
 
   Future<void> _fetchPhotos() async {
-    if (_isLoading || _serverUrl == null || _cookie == null) return;
+  if (_isLoading || _serverUrl == null || _cookie == null) return;
 
-    setState(() {
-      _isLoading = true;
-    });
+  setState(() {
+    _isLoading = true;
+  });
 
-    try {
-      String apiUrl =
-          '$_serverUrl/photo/list?page=$_pageNumber&per_page=$_perPage&order=new-to-old';
+  try {
+    String apiUrl =
+        '$_serverUrl/photo/list?page=$_pageNumber&per_page=$_perPage&order=new-to-old';
 
-      final response = await http.get(
-        Uri.parse(apiUrl),
-        headers: {'Cookie': _cookie!}, // Include session cookie
-      );
+    final response = await http.get(
+      Uri.parse(apiUrl),
+      headers: {'Cookie': _cookie!}, // Include session cookie
+    );
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+
+      // Check if there are new photos
+      List<dynamic> newPhotos = data['photos'];
+      if (newPhotos.isEmpty) {
+        // Stop further fetching when no photos are returned
         setState(() {
-          _photos.addAll(data['photos']);
-          _pageNumber++; // Increment page for next fetch
+          _isLoading = false; // Ensure loading is stopped
         });
-      } else {
-        print('Failed to fetch photos: ${response.statusCode}');
+        return;
       }
-    } catch (e) {
-      print('Error fetching photos: $e');
-    } finally {
+
       setState(() {
-        _isLoading = false;
+        _photos.addAll(newPhotos); // Add new photos to the list
+        _pageNumber++; // Increment page for the next fetch
       });
+    } else {
+      print('Failed to fetch photos: ${response.statusCode}');
     }
+  } catch (e) {
+    print('Error fetching photos: $e');
+  } finally {
+    setState(() {
+      _isLoading = false;
+    });
   }
+}
 
   void _scrollListener() {
     if (_scrollController.position.pixels >=

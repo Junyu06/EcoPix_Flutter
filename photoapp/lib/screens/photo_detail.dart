@@ -1,6 +1,13 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/widgets.dart';
+import 'package:http/http.dart' as http;
+import 'dart:io';
+import 'dart:typed_data'; // For Uint8List
+import '../widgets/db_helper.dart';
+
+
 
 class PhotoDetailScreen extends StatefulWidget{
   final List<dynamic> photos;//list of photo for pass in
@@ -20,22 +27,41 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen>{
   late PageController _pageController;
   int currentIndex = 0;
   bool _showTooBar = true;
+  final Map<String, Uint8List> _imageCache = {}; // Local in-memory cache
+  String? _serverUrl;
+  String? _cookie;
 
   @override
   void initState(){
     super.initState();
     _pageController = PageController(initialPage: widget.intialIndex);
-    //_preloadImages(currentIndex);
     currentIndex = widget.intialIndex;
+
+    _initialize();
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _preloadImages(currentIndex);
     });
   }
 
+  Future<void> _initialize() async {
+    try {
+      // Fetch server URL and cookie
+      Map<String, String?> userData = await DbHelper.getCookieAndServer();
+      setState(() {
+        _serverUrl = userData['server'];
+        _cookie = userData['cookie'];
+      });
+    } catch (e) {
+      print('Error initializing: $e');
+    }
+  }
+
   void _preloadImages(int index){
     for (int i = index -3; i<= index+3; i++){
       if (i>=0 && i< widget.photos.length){
-        precacheImage(NetworkImage(widget.photos[i]['urls']['full']), context);
+        buildImageFromCookie('$_serverUrl${widget.photos[i]['photo_url']}', _cookie ?? '');
+        //precacheImage(NetworkImage(widget.photos[i]['urls']['full']), context);
       }
     }
   }
@@ -103,27 +129,7 @@ Widget build(BuildContext context) {
             itemBuilder: (context, index) {
               return Center(
                 child: Container(
-                  child: Image.network(
-                    widget.photos[index]['urls']['full'], // Use photo URL from the current photo
-                    fit: BoxFit.contain,
-                    width: double.infinity,
-                    height: double.infinity,
-                    gaplessPlayback: true,
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return Center(
-                        child: CupertinoActivityIndicator(),
-                      );
-                    },
-                    errorBuilder: (context, error, stackTrace) {
-                      return Center(
-                        child: Icon(
-                          CupertinoIcons.exclamationmark_circle,
-                          color: CupertinoColors.systemRed,
-                        ),
-                      );
-                    },
-                  ),
+                  child: buildImageFromCookie('$_serverUrl${widget.photos[index]['photo_url']}', _cookie ?? ''),
                 ),
               );
             },
@@ -186,13 +192,6 @@ void _showInfo() {
         return CupertinoPageScaffold(
           navigationBar: CupertinoNavigationBar(
             middle: Text('Photo Metadata'),
-            /*
-            trailing: CupertinoButton(
-              padding: EdgeInsets.zero,
-              child: Icon(CupertinoIcons.clear, color: CupertinoColors.systemRed),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-            */
           ),
           child: SafeArea(
             child: Center(
@@ -210,54 +209,6 @@ void _showInfo() {
     ),
   );
 }
-
-
-
-/*
-  Widget _buildToolbar(){
-    return CupertinoActionSheet(
-      actions: [
-        CupertinoButton(
-          child: Icon(CupertinoIcons.share, size: 30, color: CupertinoColors.white,),
-          onPressed: _sharePhoto,
-        ),
-        CupertinoButton(
-          child: Icon(CupertinoIcons.info, size:30, color: CupertinoColors.white,), 
-          onPressed: () {
-            showCupertinoDialog(
-              context: context,
-              builder: (BuildContext context){
-                return CupertinoAlertDialog(
-                  title: Text('Photo MetaData'),
-                  content: Text('Details: ${widget.photos[currentIndex]}'),
-                  actions: [
-                    CupertinoDialogAction(
-                      child: Icon(CupertinoIcons.clear, size: 30, color: CupertinoColors.white),
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
-                  ],
-                );
-              },
-            );
-          },
-        ),
-        CupertinoButton(
-          child: Icon(CupertinoIcons.star, size: 30, color: CupertinoColors.white), 
-          onPressed: (){
-            _showStarRating();
-          },
-        ),
-        CupertinoButton(
-          child: Icon(CupertinoIcons.delete, size: 30, color: CupertinoColors.black),
-          onPressed: () {
-            _deletePhoto();
-          },
-        ),
-      ],
-    );
-  }
-
-*/
   void _deletePhoto(){//chnage it later
     //nothing
   }
@@ -281,4 +232,40 @@ void _showInfo() {
       },
     );
   }
+
+  Widget buildImageFromCookie(String imageUrl, String cookie) {
+  if (_imageCache.containsKey(imageUrl)) {
+    // Use cached image
+    return Image.memory(
+      _imageCache[imageUrl]!,
+      fit: BoxFit.cover,
+    );
+  } else {
+    // Fetch image and cache it
+    return FutureBuilder<http.Response>(
+      future: http.get(
+        Uri.parse(imageUrl),
+        headers: {'Cookie': cookie},
+      ),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return CupertinoActivityIndicator(); // Loading indicator
+        } else if (snapshot.hasError || snapshot.data == null || snapshot.data!.statusCode != 200) {
+          return Icon(
+            CupertinoIcons.exclamationmark_triangle, // Error icon
+            color: Colors.red,
+          );
+        } else {
+          // Cache the image data
+          _imageCache[imageUrl] = snapshot.data!.bodyBytes;
+
+          return Image.memory(
+            snapshot.data!.bodyBytes,
+            fit: BoxFit.cover,
+          );
+        }
+      },
+    );
+  }
+}
 }
