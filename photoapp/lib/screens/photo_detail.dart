@@ -186,6 +186,8 @@ Widget build(BuildContext context) {
 }
 
 void _showInfo() {
+  final photoData = widget.photos[currentIndex]; // Current photo metadata
+
   Navigator.of(context).push(
     CupertinoPageRoute(
       builder: (BuildContext context) {
@@ -194,13 +196,37 @@ void _showInfo() {
             middle: Text('Photo Metadata'),
           ),
           child: SafeArea(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Text(
-                  'Name: ${widget.photos[currentIndex]['slug']}',
-                  style: TextStyle(fontSize: 18, color: CupertinoColors.black),
-                ),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Table(
+                columnWidths: const {
+                  0: IntrinsicColumnWidth(), // Adjust column widths as needed
+                  1: FlexColumnWidth(),
+                },
+                border: TableBorder.all(color: CupertinoColors.separator),
+                children: photoData.entries.map<TableRow>((entry) {
+                  return TableRow(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: Text(
+                          entry.key,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: Text(
+                          entry.value?.toString() ?? 'N/A',
+                          style: TextStyle(fontSize: 16),
+                        ),
+                      ),
+                    ],
+                  );
+                }).toList(),
               ),
             ),
           ),
@@ -209,6 +235,7 @@ void _showInfo() {
     ),
   );
 }
+
   void _deletePhoto(){//chnage it later
     //nothing
   }
