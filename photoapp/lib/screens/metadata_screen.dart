@@ -1,7 +1,9 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'dart:typed_data'; // For Uint8List
+import '../widgets/db_helper.dart';
 
 class MetadataScreen extends StatefulWidget {
   @override
@@ -11,31 +13,27 @@ class MetadataScreen extends StatefulWidget {
 class _MetadataScreen extends State<MetadataScreen> {
   String _selectedSegment = 'Folder'; // Tracks the current selection
   String _selectedSortingOption = 'random'; // Default sorting option
+  String? _serverUrl; // Replace with your actual server URL
+  String? _cookie; // Replace with the actual session cookie
+  final Map<String, Uint8List> _imageCache = {}; // Local in-memory cache
 
-  // Display the box for each album
-  Widget _buildAlbumBox(String _foldername) {
-    return GestureDetector(
-      onTap: () {
-        //_openFolder(_foldername); // Open the album when tapped
-      },
-      child: Column(
-        children: [
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: CupertinoColors.systemGrey5,
-                borderRadius: BorderRadius.circular(8.0),
-              ),
-              child: Center(
-                child: Icon(CupertinoIcons.photo, size: 50, color: CupertinoColors.black),
-              ),
-            ),
-          ),
-          SizedBox(height: 8.0),
-          Text(_foldername, style: TextStyle(color: CupertinoColors.black)),
-        ],
-      ),
-    );
+  @override
+  void initState(){
+    super.initState();
+    _initialize();
+  }
+
+    Future<void> _initialize() async {
+    try {
+      // Fetch server URL and cookie from the database
+      Map<String, String?> userData = await DbHelper.getCookieAndServer();
+      setState(() {
+        _serverUrl = userData['server'];
+        _cookie = userData['cookie'];
+      });
+    } catch (e) {
+      print("Error initializing: $e");
+    }
   }
 
   @override
@@ -45,8 +43,8 @@ class _MetadataScreen extends State<MetadataScreen> {
         middle: CupertinoSegmentedControl<String>(
           padding: EdgeInsets.symmetric(horizontal: 12.0),
           children: {
-            'Folder': Text(' GPS '),
-            'Photo': Text(' EXIF '),
+            'Folder': Text('GPS'),
+            'Photo': Text('EXIF'),
           },
           onValueChanged: (String value) {
             setState(() {
@@ -59,53 +57,39 @@ class _MetadataScreen extends State<MetadataScreen> {
           padding: EdgeInsets.zero,
           child: Icon(CupertinoIcons.sort_down),
           onPressed: () {
-            _showSortingOptions(context); // Show sorting options
+            _showSortingOptions(context);
           },
         ),
       ),
       child: SafeArea(
-        child: _buildContent(), // Build the content based on the selected segment
+        child: _buildContent(),
       ),
     );
   }
 
   Widget _buildContent() {
     if (_selectedSegment == 'Folder') {
-      return _folderScreen(); // Show folder content
+      return Center(child: Text('GPS Screen Coming Soon'));
     } else {
-      return _photoScreen(); // Show photo content
+      return _photoScreen();
     }
   }
 
-  Widget _folderScreen() {
-    return FlutterMap(
-    options: MapOptions(
-      initialCenter: LatLng(51.509364, -0.128928), // Center the map over London
-      initialZoom: 9.2,
-    ),
-    children: [
-      TileLayer( // Display map tiles from any source
-        urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', // OSMF's Tile Server
-        userAgentPackageName: 'com.example.app',
-        // And many more recommended properties!
-      ),
-      RichAttributionWidget( // Include a stylish prebuilt attribution widget that meets all requirments
-        attributions: [
-          TextSourceAttribution(
-            'OpenStreetMap contributors',
-            onTap: () => launchUrl(Uri.parse('https://openstreetmap.org/copyright')), // (external)
-          ),
-          // Also add images...
-        ],
-      ),
-    ],
-  );
+  Widget _photoScreen() {
+    return ListView(
+      padding: EdgeInsets.all(16.0),
+      children: [
+        _buildOptionTile('Camera Model', () => _fetchAndDisplayOptions('camera_model')),
+        _buildOptionTile('Focal Length', () => _fetchAndDisplayOptions('focal_length')),
+        _buildOptionTile('Lens', () => _fetchAndDisplayOptions('lens')),
+      ],
+    );
   }
 
   Widget _buildOptionTile(String optionName, Function onTapFunction) {
     return GestureDetector(
       onTap: () {
-        onTapFunction(); // Call the respective function when tapped
+        onTapFunction();
       },
       child: Container(
         padding: EdgeInsets.all(16.0),
@@ -125,61 +109,175 @@ class _MetadataScreen extends State<MetadataScreen> {
     );
   }
 
-  Widget _photoScreen() {
-    return ListView(
-      padding: EdgeInsets.all(16.0),
-      children: [
-        _buildOptionTile('Camera Model', _showCameraModel),
-        _buildOptionTile('Focal Length', _showFocalLength),
-        _buildOptionTile('Lens', _showLens),
-      ],
-    );
+  Future<void> _fetchAndDisplayOptions(String exifType) async {
+  if (_serverUrl == null || _cookie == null) {
+    print('Server URL or cookie is null');
+    return;
   }
 
-  // Function for Camera Model page
-  void _showCameraModel() {
-    Navigator.push(
-      context,
-      CupertinoPageRoute(
-        builder: (context) => _detailScreen('Camera Model'),
-      ),
+  try {
+    final response = await http.get(
+      Uri.parse("$_serverUrl/photoexif?exif_type=$exifType&action=list"),
+      headers: {'Cookie': _cookie!},
     );
-  }
 
-  // Function for Focal Length page
-  void _showFocalLength() {
-    Navigator.push(
-      context,
-      CupertinoPageRoute(
-        builder: (context) => _detailScreen('Focal Length'),
-      ),
-    );
-  }
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
 
-  // Function for Lens page
-  void _showLens() {
-    Navigator.push(
-      context,
-      CupertinoPageRoute(
-        builder: (context) => _detailScreen('Lens'),
-      ),
-    );
-  }
+      // Ensure all values are converted to strings
+      final List<String> options =
+          List<String>.from(data['values'].map((value) => value.toString()));
 
-  Widget _detailScreen(String detailType) {
-    return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: Text(detailType),
-      ),
-      child: SafeArea(
-        child: Center(
-          child: Text('Details for $detailType will be displayed here'),
+      _showOptionsDialog(exifType, options);
+    } else {
+      print('Failed to fetch options: ${response.statusCode}');
+      _showErrorDialog('Error', 'Failed to fetch options.');
+    }
+  } catch (e) {
+    print('Error fetching options: $e');
+    _showErrorDialog('Error', 'Failed to fetch options.');
+  }
+}
+
+
+ void _showOptionsDialog(String exifType, List<String> options) {
+  showCupertinoModalPopup(
+    context: context,
+    builder: (BuildContext context) {
+      return Container(
+        height: MediaQuery.of(context).size.height * 0.6, // Set the height for the modal
+        color: CupertinoColors.systemGrey6, // Background color for the modal
+        child: Column(
+          children: [
+            // Header for the dialog
+            Container(
+              padding: EdgeInsets.all(16.0),
+              color: CupertinoColors.systemGrey5,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Select $exifType',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: CupertinoColors.black,
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.pop(context);
+                    },
+                    child: Icon(
+                      CupertinoIcons.clear,
+                      color: CupertinoColors.destructiveRed,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView.builder(
+                itemCount: options.length,
+                itemBuilder: (context, index) {
+                  return GestureDetector(
+                    onTap: () {
+                      Navigator.pop(context);
+                      _fetchPhotosByOption(exifType, options[index]);
+                    },
+                    child: Container(
+                      padding: EdgeInsets.symmetric(vertical: 16.0, horizontal: 20.0),
+                      decoration: BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(
+                            color: CupertinoColors.systemGrey4,
+                            width: 0.5,
+                          ),
+                        ),
+                      ),
+                      child: Text(
+                        options[index],
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: CupertinoColors.black,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            // Cancel button at the bottom
+            Container(
+              padding: EdgeInsets.all(16.0),
+              child: GestureDetector(
+                onTap: () {
+                  Navigator.pop(context);
+                },
+                child: Container(
+                  alignment: Alignment.center,
+                  padding: EdgeInsets.symmetric(vertical: 12.0),
+                  decoration: BoxDecoration(
+                    color: CupertinoColors.systemGrey5,
+                    borderRadius: BorderRadius.circular(8.0),
+                  ),
+                  child: Text(
+                    'Cancel',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: CupertinoColors.activeBlue,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
+      );
+    },
+  );
+}
+
+
+  Future<void> _fetchPhotosByOption(String exifType, String value) async {
+    try {
+      final response = await http.get(
+        Uri.parse("$_serverUrl/photoexif?exif_type=$exifType&action=photo&value=$value"),
+        headers: {'Cookie': _cookie!},
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        print('Photos for $exifType=$value: ${data['photos']}');
+        // You can navigate to a new screen to display the photos or update the UI here.
+      } else {
+        print('Failed to fetch photos: ${response.statusCode}');
+        _showErrorDialog('Error', 'Failed to fetch photos.');
+      }
+    } catch (e) {
+      print('Error fetching photos: $e');
+      _showErrorDialog('Error', 'Failed to fetch photos.');
+    }
+  }
+
+  void _showErrorDialog(String title, String message) {
+    showCupertinoDialog(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          CupertinoDialogAction(
+            child: Text('OK'),
+            onPressed: () {
+              Navigator.pop(context);
+            },
+          ),
+        ],
       ),
     );
   }
 
-  // Function to show sorting options using CupertinoActionSheet
   void _showSortingOptions(BuildContext context) {
     showCupertinoModalPopup<void>(
       context: context,

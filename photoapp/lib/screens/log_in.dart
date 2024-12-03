@@ -43,11 +43,15 @@ class _LoginScreenState extends State<LoginScreen> {
         );
 
         if (response.statusCode == 200) {
+          print("Valid session found. Navigating to HomeScreen.");
           Navigator.pushReplacement(
             context,
             CupertinoPageRoute(builder: (context) => HomeScreen()),
           );
           return;
+        } else {
+          print("Session expired or unauthorized. Status code: ${response.statusCode}");
+          await DbHelper.clearCookieAndServer(); // Clear invalid session
         }
       }
     } catch (e) {
@@ -87,6 +91,11 @@ class _LoginScreenState extends State<LoginScreen> {
           final sessionCookie = cookie.split(';').firstWhere((cookie) => cookie.startsWith('session='));
           await DbHelper.saveCookieAndServer(sessionCookie, server);
           print("Session cookie saved: $sessionCookie");
+
+          // Ensure session cookie is available for subsequent requests
+          setState(() {
+            _serverAddressController.text = server;
+          });
 
           // Introduce a 1-second delay before navigating
           await Future.delayed(Duration(seconds: 1));
