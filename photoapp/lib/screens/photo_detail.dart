@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
-import 'dart:io';
 import 'dart:typed_data'; // For Uint8List
 import '../widgets/db_helper.dart';
+import 'dart:convert';
 
 
 
@@ -171,7 +171,7 @@ Widget build(BuildContext context) {
                   CupertinoButton(
                     padding: EdgeInsets.zero,
                     onPressed: () {
-                      _showStarRating();
+                      _showAlbumAction();
                     },
                     child: Icon(CupertinoIcons.star, color: CupertinoColors.white),
                   ),
@@ -246,25 +246,111 @@ void _showInfo() {
     //nothing
   }
 
-  void _showStarRating() {//change it later
-    showCupertinoModalPopup(
-      context: context,
-      builder: (BuildContext context) {
-        return CupertinoActionSheet(
-          title: Text('Rate this photo'),
-          actions: List.generate(5, (index) {
-            return CupertinoButton(
-              child: Text('${index + 1} Stars'),
-              onPressed: () {
-                _setRating(index + 1);
-                Navigator.of(context).pop();
-              },
+  // void _showStarRating() {//change it later
+  //   showCupertinoModalPopup(
+  //     context: context,
+  //     builder: (BuildContext context) {
+  //       return CupertinoActionSheet(
+  //         title: Text('Rate this photo'),
+  //         actions: List.generate(5, (index) {
+  //           return CupertinoButton(
+  //             child: Text('${index + 1} Stars'),
+  //             onPressed: () {
+  //               _setRating(index + 1);
+  //               Navigator.of(context).pop();
+  //             },
+  //           );
+  //         }),
+  //       );
+  //     },
+  //   );
+  // }
+
+  void _showAlbumAction() {
+  showCupertinoModalPopup(
+    context: context,
+    builder: (BuildContext context) {
+      return FutureBuilder<List<Map<String, dynamic>>>(
+        future: _fetchAlbums(), // Fetch the list of albums
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Center(child: CupertinoActivityIndicator());
+          } else if (snapshot.hasError || snapshot.data == null) {
+            return CupertinoActionSheet(
+              title: Text('Error'),
+              message: Text('Failed to load albums'),
+              actions: [],
+              cancelButton: CupertinoButton(
+                child: Text('Close'),
+                onPressed: () => Navigator.pop(context),
+              ),
             );
-          }),
-        );
-      },
+          }
+
+          List<Map<String, dynamic>> albums = snapshot.data!;
+          return CupertinoActionSheet(
+            title: Text('Manage Albums'),
+            message: Text('Select an album to add/remove this photo.'),
+            actions: albums.map((album) {
+              return CupertinoActionSheetAction(
+                child: Text(album['name']),
+                onPressed: () {
+                  _togglePhotoInAlbum(album['id'], widget.photos[currentIndex]['id']);
+                  Navigator.pop(context); // Close the action sheet
+                },
+              );
+            }).toList(),
+            cancelButton: CupertinoButton(
+              child: Text('Cancel'),
+              onPressed: () => Navigator.pop(context),
+            ),
+          );
+        },
+      );
+    },
+  );
+}
+
+Future<List<Map<String, dynamic>>> _fetchAlbums() async {
+  try {
+    if (_serverUrl == null || _cookie == null) throw Exception("Server or cookie missing");
+    final response = await http.get(
+      Uri.parse("$_serverUrl/albums"),
+      headers: {'Cookie': _cookie!},
     );
+
+    if (response.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(json.decode(response.body));
+    } else {
+      throw Exception('Failed to fetch albums: ${response.statusCode}');
+    }
+  } catch (e) {
+    print('Error fetching albums: $e');
+    return [];
   }
+}
+
+Future<void> _togglePhotoInAlbum(int albumId, int photoId) async {
+  try {
+    final response = await http.get(
+      Uri.parse("$_serverUrl/album/adddeletePhoto?album_id=$albumId&photo_id=$photoId"),
+      headers: {'Cookie': _cookie!},
+    );
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      print(data['message']); // Print success message
+      setState(() {
+        // Optionally update UI based on server response
+      });
+    } else {
+      print('Failed to toggle photo in album: ${response.statusCode}');
+    }
+  } catch (e) {
+    print('Error toggling photo in album: $e');
+  }
+}
+
 
   Widget buildImageFromCookie(String imageUrl, String cookie) {
   if (_imageCache.containsKey(imageUrl)) {

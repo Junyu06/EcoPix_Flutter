@@ -42,6 +42,7 @@ class _PhotoGridViewScreenState extends State<PhotoGridViewScreen> {
     _scrollController = ScrollController();
     _scrollController.addListener(_scrollListener);
     _fetchPhotos(); // Fetch initial photos
+    _initialize();
   }
 
   Future<void> _initialize() async {
@@ -54,6 +55,7 @@ class _PhotoGridViewScreenState extends State<PhotoGridViewScreen> {
         _serverUrl = userData['server'];
         _cookie = userData['cookie'];
       });
+       //print('Initialized with album_id: $album_id, server: $_serverUrl, cookie: $_cookie');
       await _fetchPhotos();
     } catch (e) {
       print('Error initializing: $e');
@@ -66,49 +68,54 @@ class _PhotoGridViewScreenState extends State<PhotoGridViewScreen> {
     super.dispose();
   }
 
-  Future<void> _fetchPhotos() async {
-    if (_isLoading || _serverUrl == null || _cookie == null) return;
+  Future<void> _fetchPhotos({bool refresh = false}) async {
+  if (_isLoading || _serverUrl == null || _cookie == null || album_id == null) return;
 
-    setState(() {
-      _isLoading = true;
-    });
-    try {
-      String apiUrl =
-          '$_serverUrl/album/photos?page=$_pageNumber&per_page=$_perPage&order=$_selectedSortingOption&album_id=$album_id';
+  setState(() {
+    _isLoading = true;
+  });
 
-      final response = await http.get(
-        Uri.parse(apiUrl),
-        headers: {'Cookie': _cookie!}, // Include session cookie
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-
-        // Check if there are new photos
-        List<dynamic> newPhotos = data['photos'];
-        if (newPhotos.isEmpty) {
-          // Stop further fetching when no photos are returned
-          setState(() {
-            _isLoading = false; // Ensure loading is stopped
-          });
-          return;
-        }
-
-        setState(() {
-          _photos.addAll(newPhotos); // Add new photos to the list
-          _pageNumber++; // Increment page for the next fetch
-        });
-      } else {
-        print('Failed to fetch photos: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error fetching photos: $e');
-    } finally {
+  try {
+    if (refresh) {
       setState(() {
-        _isLoading = false;
+        _pageNumber = 1; // Reset pagination
+        _photos.clear(); // Clear existing photos
       });
     }
+
+    String apiUrl =
+        '$_serverUrl/album/photos?page=$_pageNumber&per_page=$_photosPerPage&order=$_selectedSortingOption&album_id=$album_id';
+
+    final response = await http.get(
+      Uri.parse(apiUrl),
+      headers: {'Cookie': _cookie!}, // Include session cookie
+    );
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      List<dynamic> newPhotos = data['photos'];
+      if (newPhotos.isEmpty) {
+        print('No more photos to load.');
+        return;
+      }
+
+      setState(() {
+        _photos.addAll(newPhotos); // Add photos to the grid
+        _pageNumber++; // Increment page for pagination
+      });
+    } else {
+      print('Failed to fetch photos: ${response.statusCode}');
+    }
+  } catch (e) {
+    print('Error fetching photos: $e');
+  } finally {
+    setState(() {
+      _isLoading = false;
+    });
   }
+}
+
+
 
   void _scrollListener() {
     if (_scrollController.position.pixels >=
@@ -128,7 +135,9 @@ class _PhotoGridViewScreenState extends State<PhotoGridViewScreen> {
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
         middle: Text(
-          _photos[0]['album'], // Album name as the title
+          _photos.isNotEmpty
+              ? (_photos[0]['album'] != null ? _photos[0]['album']['name'] : 'Album')
+              : 'Album', // Fallback for empty photos or no album
           style: TextStyle(color: CupertinoColors.black),
         ),
         trailing: CupertinoButton(
@@ -153,36 +162,37 @@ class _PhotoGridViewScreenState extends State<PhotoGridViewScreen> {
   }
 
   Widget _buildPhotoGrid() {
-    return GridView.builder(
-      controller: _scrollController,
-      padding: EdgeInsets.all(8.0),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 8.0,
-        mainAxisSpacing: 8.0,
-      ),
-      itemCount: _photos.length,
-      itemBuilder: (context, index) {
-        return GestureDetector(
-          onTap: () {
-            Navigator.push(
-              context,
-              CupertinoPageRoute(
-                fullscreenDialog: true,
-                builder: (context) => PhotoDetailScreen(
-                  photos: _photos,
-                  intialIndex: index,
-                  serverUrl: _serverUrl ?? '',
-                  cookie: _cookie ?? '',
-                ),
+  return GridView.builder(
+    controller: _scrollController,
+    padding: EdgeInsets.all(8.0),
+    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+      crossAxisCount: 3,
+      crossAxisSpacing: 8.0,
+      mainAxisSpacing: 8.0,
+    ),
+    itemCount: _photos.length,
+    itemBuilder: (context, index) {
+      return GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            CupertinoPageRoute(
+              fullscreenDialog: true,
+              builder: (context) => PhotoDetailScreen(
+                photos: _photos,
+                intialIndex: index,
+                serverUrl: _serverUrl ?? '',
+                cookie: _cookie ?? '',
               ),
-            );
-          },
-          child: buildImageFromCookie('$_serverUrl${_photos[index]['thumbnail_url']}', _cookie ?? ''),
-        );
-      },
-    );
-  }
+            ),
+          );
+        },
+        child: buildImageFromCookie('$_serverUrl${_photos[index]['thumbnail_url']}', _cookie ?? ''),
+      );
+    },
+  );
+}
+
 
   Widget buildImageFromCookie(String imageUrl, String cookie) {
     if (_imageCache.containsKey(imageUrl)) {
@@ -229,71 +239,73 @@ class _PhotoGridViewScreenState extends State<PhotoGridViewScreen> {
 
   // Show sort options
   void _showSortingOptions(BuildContext context) {
-    showCupertinoModalPopup<void>(
-      context: context,
-      builder: (BuildContext context) {
-        return CupertinoActionSheet(
-          title: Text('Sort By'),
-          actions: <CupertinoActionSheetAction>[
-            CupertinoActionSheetAction(
-              onPressed: () {
-                setState(() {
-                  _selectedSortingOption = 'random';
-                });
-                Navigator.pop(context);
-                _refreshScreen();
-              },
-              child: Text('Random'),
-            ),
-            CupertinoActionSheetAction(
-              onPressed: () {
-                setState(() {
-                  _selectedSortingOption = 'a-z';
-                });
-                Navigator.pop(context);
-                _refreshScreen();
-              },
-              child: Text('A-Z'),
-            ),
-            CupertinoActionSheetAction(
-              onPressed: () {
-                setState(() {
-                  _selectedSortingOption = 'z-a';
-                });
-                Navigator.pop(context);
-                _refreshScreen();
-              },
-              child: Text('Z-A'),
-            ),
-            CupertinoActionSheetAction(
-              onPressed: () {
-                setState(() {
-                  _selectedSortingOption = 'new-old';
-                });
-                Navigator.pop(context);
-                _refreshScreen();
-              },
-              child: Text('New-Old'),
-            ),
-            CupertinoActionSheetAction(
-              onPressed: () {
-                setState(() {
-                  _selectedSortingOption = 'old-new';
-                });
-                Navigator.pop(context);
-                _refreshScreen();
-              },
-              child: Text('Old-New'),
-            ),
-          ],
-          cancelButton: CupertinoActionSheetAction(
+  showCupertinoModalPopup<void>(
+    context: context,
+    builder: (BuildContext context) {
+      return CupertinoActionSheet(
+        title: Text('Sort By'),
+        actions: <CupertinoActionSheetAction>[
+          CupertinoActionSheetAction(
             onPressed: () {
+              setState(() {
+                _selectedSortingOption = 'random';
+                _photos.shuffle(); // Shuffle photos locally
+              });
               Navigator.pop(context);
+              _refreshScreen();
             },
-            child: Text('Cancel'),
+            child: Text('Random'),
           ),
-        );
-      },
-    );
-  }
+          CupertinoActionSheetAction(
+            onPressed: () {
+              setState(() {
+                _selectedSortingOption = 'a-z';
+              });
+              Navigator.pop(context);
+              _fetchPhotos(refresh: true); // Re-fetch photos with sorting applied
+            },
+            child: Text('A-Z'),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () {
+              setState(() {
+                _selectedSortingOption = 'z-a';
+              });
+              Navigator.pop(context);
+              _fetchPhotos(refresh: true); // Re-fetch photos with sorting applied
+            },
+            child: Text('Z-A'),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () {
+              setState(() {
+                _selectedSortingOption = 'new-to-old';
+              });
+              Navigator.pop(context);
+              _fetchPhotos(refresh: true); // Re-fetch photos with sorting applied
+            },
+            child: Text('New-Old'),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () {
+              setState(() {
+                _selectedSortingOption = 'old-to-new';
+              });
+              Navigator.pop(context);
+              _fetchPhotos(refresh: true); // Re-fetch photos with sorting applied
+            },
+            child: Text('Old-New'),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () {
+            Navigator.pop(context);
+          },
+          child: Text('Cancel'),
+        ),
+      );
+    },
+  );
+}
+
 }
