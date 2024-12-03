@@ -10,11 +10,13 @@ import 'dart:typed_data';
 // this is for album dart
 class PhotoGridViewScreen extends StatefulWidget {
   final String selectedSortingOption; // Sorting option
-  final String albumid; // Album name
+  final String exifType; // Album name
+  final String? value;
 
   PhotoGridViewScreen({
     required this.selectedSortingOption,
-    required this.albumid,
+    required this.exifType,
+    required this.value,
   });
 
   @override
@@ -23,31 +25,24 @@ class PhotoGridViewScreen extends StatefulWidget {
 
 class _PhotoGridViewScreenState extends State<PhotoGridViewScreen> {
   List<dynamic> _photos = [];
-  int _pageNumber = 1; // Page number for endless scrolling
-  final int _photosPerPage = 20; // Number of photos to load per page
   bool _isLoading = false; // Loading state
   late ScrollController _scrollController;
-  ServerConnection API = ServerConnection(); // Unsplash API instance
   String? _serverUrl;
   String? _cookie;
-  int _perPage = 20;
-  String? album_id;
   final Map<String, Uint8List> _imageCache = {}; // Local in-memory cache
 
-  String _selectedSortingOption = 'Random'; // Default sorting option
+  String _selectedSortingOption = 'new-to-old'; // Default sorting option
 
   @override
   void initState() {
     super.initState();
     _scrollController = ScrollController();
     _scrollController.addListener(_scrollListener);
-    _fetchPhotos(); // Fetch initial photos
     _initialize();
   }
 
   Future<void> _initialize() async {
     try {
-      album_id = widget.albumid;
       _selectedSortingOption = widget.selectedSortingOption;
       // Fetch server URL and cookie
       Map<String, String?> userData = await DbHelper.getCookieAndServer();
@@ -56,7 +51,7 @@ class _PhotoGridViewScreenState extends State<PhotoGridViewScreen> {
         _cookie = userData['cookie'];
       });
        //print('Initialized with album_id: $album_id, server: $_serverUrl, cookie: $_cookie');
-      await _fetchPhotos();
+      await _fetchPhotosByOption(widget.exifType, widget.value??'');
     } catch (e) {
       print('Error initializing: $e');
     }
@@ -68,60 +63,53 @@ class _PhotoGridViewScreenState extends State<PhotoGridViewScreen> {
     super.dispose();
   }
 
-  Future<void> _fetchPhotos({bool refresh = false}) async {
-  if (_isLoading || _serverUrl == null || _cookie == null || album_id == null) return;
-
-  setState(() {
-    _isLoading = true;
-  });
-
+Future<void> _fetchPhotosByOption(String exifType, String value) async {
   try {
-    if (refresh) {
-      setState(() {
-        _pageNumber = 1; // Reset pagination
-        _photos.clear(); // Clear existing photos
-      });
-    }
-
-    String apiUrl =
-        '$_serverUrl/album/photos?page=$_pageNumber&per_page=$_photosPerPage&order=$_selectedSortingOption&album_id=$album_id';
-
     final response = await http.get(
-      Uri.parse(apiUrl),
-      headers: {'Cookie': _cookie!}, // Include session cookie
+      Uri.parse("$_serverUrl/photoexif?exif_type=$exifType&action=photo&value=$value"),
+      headers: {'Cookie': _cookie!},
     );
 
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
-      List<dynamic> newPhotos = data['photos'];
-      if (newPhotos.isEmpty) {
-        print('No more photos to load.');
-        return;
-      }
-
+      //print('Photos for $exifType=$value: ${data['photos']}');
       setState(() {
-        _photos.addAll(newPhotos); // Add photos to the grid
-        _pageNumber++; // Increment page for pagination
+        _photos = data['photos']; // Assign the "photos" list specifically
       });
     } else {
       print('Failed to fetch photos: ${response.statusCode}');
+      _showErrorDialog('Error', 'Failed to fetch photos.');
     }
   } catch (e) {
     print('Error fetching photos: $e');
-  } finally {
-    setState(() {
-      _isLoading = false;
-    });
+    _showErrorDialog('Error', 'Failed to fetch photos.');
   }
 }
 
+  void _showErrorDialog(String title, String message) {
+    showCupertinoDialog(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          CupertinoDialogAction(
+            child: Text('OK'),
+            onPressed: () {
+              Navigator.pop(context);
+            },
+          ),
+        ],
+      ),
+    );
+  }
 
 
   void _scrollListener() {
     if (_scrollController.position.pixels >=
             _scrollController.position.maxScrollExtent &&
         !_isLoading) {
-      _fetchPhotos();
+      //_fetchPhotos();
     }
   }
     
@@ -255,9 +243,11 @@ class _PhotoGridViewScreenState extends State<PhotoGridViewScreen> {
             onPressed: () {
               setState(() {
                 _selectedSortingOption = 'a-z';
+                _photos.sort((a, b) => a['filename'].compareTo(b['filename']));
               });
               Navigator.pop(context);
-              _fetchPhotos(refresh: true); // Re-fetch photos with sorting applied
+              _refreshScreen();
+             //_fetchPhotos(refresh: true); // Re-fetch photos with sorting applied
             },
             child: Text('A-Z'),
           ),
@@ -265,9 +255,11 @@ class _PhotoGridViewScreenState extends State<PhotoGridViewScreen> {
             onPressed: () {
               setState(() {
                 _selectedSortingOption = 'z-a';
+                _photos.sort((a, b) => b['filename'].compareTo(a['filename']));
               });
               Navigator.pop(context);
-              _fetchPhotos(refresh: true); // Re-fetch photos with sorting applied
+              _refreshScreen();
+              //_fetchPhotos(refresh: true); // Re-fetch photos with sorting applied
             },
             child: Text('Z-A'),
           ),
@@ -275,9 +267,12 @@ class _PhotoGridViewScreenState extends State<PhotoGridViewScreen> {
             onPressed: () {
               setState(() {
                 _selectedSortingOption = 'new-to-old';
+                _photos.sort((a, b) => DateTime.parse(b['creation_date'])
+                    .compareTo(DateTime.parse(a['creation_date'])));
               });
               Navigator.pop(context);
-              _fetchPhotos(refresh: true); // Re-fetch photos with sorting applied
+              _refreshScreen();
+              //_fetchPhotos(refresh: true); // Re-fetch photos with sorting applied
             },
             child: Text('New-Old'),
           ),
@@ -285,9 +280,12 @@ class _PhotoGridViewScreenState extends State<PhotoGridViewScreen> {
             onPressed: () {
               setState(() {
                 _selectedSortingOption = 'old-to-new';
+                _photos.sort((a, b) => DateTime.parse(a['creation_date'])
+                    .compareTo(DateTime.parse(b['creation_date'])));
               });
               Navigator.pop(context);
-              _fetchPhotos(refresh: true); // Re-fetch photos with sorting applied
+              _refreshScreen();
+              //_fetchPhotos(refresh: true); // Re-fetch photos with sorting applied
             },
             child: Text('Old-New'),
           ),

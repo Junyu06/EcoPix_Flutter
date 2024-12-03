@@ -4,6 +4,8 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:typed_data'; // For Uint8List
 import '../widgets/db_helper.dart';
+import 'option_screen.dart';
+import 'exif_photo_screen.dart';
 
 class MetadataScreen extends StatefulWidget {
   @override
@@ -12,7 +14,7 @@ class MetadataScreen extends StatefulWidget {
 
 class _MetadataScreen extends State<MetadataScreen> {
   String _selectedSegment = 'Folder'; // Tracks the current selection
-  String _selectedSortingOption = 'random'; // Default sorting option
+  String _selectedSortingOption = 'a-z'; // Default sorting option
   String? _serverUrl; // Replace with your actual server URL
   String? _cookie; // Replace with the actual session cookie
   final Map<String, Uint8List> _imageCache = {}; // Local in-memory cache
@@ -140,101 +142,34 @@ class _MetadataScreen extends State<MetadataScreen> {
 }
 
 
- void _showOptionsDialog(String exifType, List<String> options) {
-  showCupertinoModalPopup(
-    context: context,
-    builder: (BuildContext context) {
-      return Container(
-        height: MediaQuery.of(context).size.height * 0.6, // Set the height for the modal
-        color: CupertinoColors.systemGrey6, // Background color for the modal
-        child: Column(
-          children: [
-            // Header for the dialog
-            Container(
-              padding: EdgeInsets.all(16.0),
-              color: CupertinoColors.systemGrey5,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Select $exifType',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: CupertinoColors.black,
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.pop(context);
-                    },
-                    child: Icon(
-                      CupertinoIcons.clear,
-                      color: CupertinoColors.destructiveRed,
-                    ),
-                  ),
-                ],
+void _showOptionsDialog(String exifType, List<String> options) {
+  String? selectedOption; // Track the selected option
+
+  Navigator.push(
+    context,
+    CupertinoPageRoute(
+      builder: (context) => OptionsPage(
+        exifType: exifType,
+        options: options,
+        onOptionSelected: (option) {
+          selectedOption = option; // Update the selected option
+          Navigator.pop(context); // Close the OptionsPage
+          Navigator.push(
+            context,
+            CupertinoPageRoute(
+              builder: (context) => PhotoGridViewScreen(
+                selectedSortingOption: 'new-to-old', // Default sorting option
+                exifType: exifType,
+                value: selectedOption,
               ),
             ),
-            Expanded(
-              child: ListView.builder(
-                itemCount: options.length,
-                itemBuilder: (context, index) {
-                  return GestureDetector(
-                    onTap: () {
-                      Navigator.pop(context);
-                      _fetchPhotosByOption(exifType, options[index]);
-                    },
-                    child: Container(
-                      padding: EdgeInsets.symmetric(vertical: 16.0, horizontal: 20.0),
-                      decoration: BoxDecoration(
-                        border: Border(
-                          bottom: BorderSide(
-                            color: CupertinoColors.systemGrey4,
-                            width: 0.5,
-                          ),
-                        ),
-                      ),
-                      child: Text(
-                        options[index],
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: CupertinoColors.black,
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-            // Cancel button at the bottom
-            Container(
-              padding: EdgeInsets.all(16.0),
-              child: GestureDetector(
-                onTap: () {
-                  Navigator.pop(context);
-                },
-                child: Container(
-                  alignment: Alignment.center,
-                  padding: EdgeInsets.symmetric(vertical: 12.0),
-                  decoration: BoxDecoration(
-                    color: CupertinoColors.systemGrey5,
-                    borderRadius: BorderRadius.circular(8.0),
-                  ),
-                  child: Text(
-                    'Cancel',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: CupertinoColors.activeBlue,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    },
+          ).then((_) {
+            // Return to OptionsPage with the previously selected option
+            _showOptionsDialog(exifType, options);
+          });
+        },
+      ),
+    ),
   );
 }
 
