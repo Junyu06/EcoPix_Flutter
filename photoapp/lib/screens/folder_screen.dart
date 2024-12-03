@@ -42,36 +42,45 @@ class _FolderScreenState extends State<FolderScreen> {
 }
 
 
-  Future<void> _fetchFolders() async {
-    if (_serverUrl == null || _cookie == null) return;
+Future<void> _fetchFolders() async {
+  if (_serverUrl == null || _cookie == null) return;
 
-    setState(() {
-      _isLoading = true;
-    });
+  setState(() {
+    _isLoading = true;
+  });
 
-    try {
-      final response = await http.get(
-        Uri.parse("$_serverUrl/folders?path=$_currentPath"),
-        headers: {'Cookie': _cookie!},
-      );
+  try {
+    final response = await http.get(
+      Uri.parse("$_serverUrl/folders?path=$_currentPath"),
+      headers: {'Cookie': _cookie!},
+    );
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        setState(() {
-          _folders = List<Map<String, dynamic>>.from(data['subfolders']);
-          _photos = []; // Clear photos when changing folders
-        });
-      } else {
-        print('Failed to fetch folders: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error fetching folders: $e');
-    } finally {
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+
       setState(() {
-        _isLoading = false;
+        _folders = List<Map<String, dynamic>>.from(data['subfolders']).map((folder) {
+          return {
+            "name": folder["name"],
+            "path": folder["path"],
+            "creation_date": folder["creation_date"] ?? "", // Handle missing creation_date
+          };
+        }).toList();
+
+        _photos = []; // Clear photos when changing folders
       });
+    } else {
+      print('Failed to fetch folders: ${response.statusCode}');
     }
+  } catch (e) {
+    print('Error fetching folders: $e');
+  } finally {
+    setState(() {
+      _isLoading = false;
+    });
   }
+}
+
 
   Future<void> _fetchPhotos() async {
   if (_serverUrl == null || _cookie == null) return;
@@ -253,6 +262,106 @@ Widget _buildPhotosGridView() {
       : Container(); // Empty when no back navigation is possible
 }
 
+// Show sort options
+void _showSortingOptions(BuildContext context) {
+  showCupertinoModalPopup<void>(
+    context: context,
+    builder: (BuildContext context) {
+      return CupertinoActionSheet(
+        title: Text('Sort By'),
+        actions: <CupertinoActionSheetAction>[
+          CupertinoActionSheetAction(
+            onPressed: () {
+              setState(() {
+                if (_selectedSegment == 'Folder') {
+                  // Sort folders randomly
+                  _folders.shuffle();
+                } else {
+                  // Sort photos randomly
+                  _photos.shuffle();
+                }
+              });
+              Navigator.pop(context);
+            },
+            child: Text('Random'),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () {
+              setState(() {
+                if (_selectedSegment == 'Folder') {
+                  // Sort folders A-Z
+                  _folders.sort((a, b) => a['name'].compareTo(b['name']));
+                } else {
+                  // Sort photos A-Z
+                  _photos.sort((a, b) => a['filename'].compareTo(b['filename']));
+                }
+              });
+              Navigator.pop(context);
+            },
+            child: Text('A-Z'),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () {
+              setState(() {
+                if (_selectedSegment == 'Folder') {
+                  // Sort folders Z-A
+                  _folders.sort((a, b) => b['name'].compareTo(a['name']));
+                } else {
+                  // Sort photos Z-A
+                  _photos.sort((a, b) => b['filename'].compareTo(a['filename']));
+                }
+              });
+              Navigator.pop(context);
+            },
+            child: Text('Z-A'),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () {
+              setState(() {
+                if (_selectedSegment == 'Folder') {
+                  // Sort folders by new-old
+                  _folders.sort((a, b) =>
+                      DateTime.parse(b['creation_date']).compareTo(DateTime.parse(a['creation_date'])));
+                } else {
+                  // Sort photos by new-old
+                  _photos.sort((a, b) =>
+                      DateTime.parse(b['creation_date']).compareTo(DateTime.parse(a['creation_date'])));
+                }
+              });
+              Navigator.pop(context);
+            },
+            child: Text('New-Old'),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () {
+              setState(() {
+                if (_selectedSegment == 'Folder') {
+                  // Sort folders by old-new
+                  _folders.sort((a, b) =>
+                      DateTime.parse(a['creation_date']).compareTo(DateTime.parse(b['creation_date'])));
+                } else {
+                  // Sort photos by old-new
+                  _photos.sort((a, b) =>
+                      DateTime.parse(a['creation_date']).compareTo(DateTime.parse(b['creation_date'])));
+                }
+              });
+              Navigator.pop(context);
+            },
+            child: Text('Old-New'),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () {
+            Navigator.pop(context);
+          },
+          child: Text('Cancel'),
+        ),
+      );
+    },
+  );
+}
+
+
 
 
 @override
@@ -285,10 +394,17 @@ Widget build(BuildContext context) {
             } else {
               _fetchFolders();
             }
-          });
+          },);
         },
         groupValue: _selectedSegment,
       ),
+      trailing: CupertinoButton(
+        padding: EdgeInsets.zero,
+        child: Icon(CupertinoIcons.sort_down),
+        onPressed: () {
+          _showSortingOptions(context); // Show sorting options
+        },
+),
     ),
     child: SafeArea(
       child: _isLoading
