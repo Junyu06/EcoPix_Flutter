@@ -4,14 +4,17 @@ import 'package:flutter/material.dart';
 import '../widgets/db_helper.dart';
 import 'package:photoapp/screens/photo_detail.dart'; // Import PhotoDetailScreen
 import 'package:photoapp/widgets/unsplash_api.dart'; // Import Unsplash API
-
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'dart:typed_data';
+// this is for album dart
 class PhotoGridViewScreen extends StatefulWidget {
   final String selectedSortingOption; // Sorting option
-  final String albumName; // Album name
+  final String albumid; // Album name
 
   PhotoGridViewScreen({
     required this.selectedSortingOption,
-    required this.albumName,
+    required this.albumid,
   });
 
   @override
@@ -27,6 +30,9 @@ class _PhotoGridViewScreenState extends State<PhotoGridViewScreen> {
   ServerConnection API = ServerConnection(); // Unsplash API instance
   String? _serverUrl;
   String? _cookie;
+  int _perPage = 20;
+  String? album_id;
+  final Map<String, Uint8List> _imageCache = {}; // Local in-memory cache
 
   String _selectedSortingOption = 'Random'; // Default sorting option
 
@@ -40,6 +46,8 @@ class _PhotoGridViewScreenState extends State<PhotoGridViewScreen> {
 
   Future<void> _initialize() async {
     try {
+      album_id = widget.albumid;
+      _selectedSortingOption = widget.selectedSortingOption;
       // Fetch server URL and cookie
       Map<String, String?> userData = await DbHelper.getCookieAndServer();
       setState(() {
@@ -59,21 +67,42 @@ class _PhotoGridViewScreenState extends State<PhotoGridViewScreen> {
   }
 
   Future<void> _fetchPhotos() async {
-    if (_isLoading) return; // Prevent multiple calls
+    if (_isLoading || _serverUrl == null || _cookie == null) return;
+
     setState(() {
       _isLoading = true;
     });
-
     try {
-      // Fetch photos from the Unsplash API using the ServerConnection class
-      List<dynamic> newPhotos = await API.fetchPhotos(_pageNumber, _photosPerPage);
+      String apiUrl =
+          '$_serverUrl/album/photos?page=$_pageNumber&per_page=$_perPage&order=$_selectedSortingOption&album_id=$album_id';
 
-      setState(() {
-        _photos.addAll(newPhotos);
-        _pageNumber++; // Increase page number for the next fetch
-      });
-    } catch (error) {
-      print('Error fetching photos: $error');
+      final response = await http.get(
+        Uri.parse(apiUrl),
+        headers: {'Cookie': _cookie!}, // Include session cookie
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        // Check if there are new photos
+        List<dynamic> newPhotos = data['photos'];
+        if (newPhotos.isEmpty) {
+          // Stop further fetching when no photos are returned
+          setState(() {
+            _isLoading = false; // Ensure loading is stopped
+          });
+          return;
+        }
+
+        setState(() {
+          _photos.addAll(newPhotos); // Add new photos to the list
+          _pageNumber++; // Increment page for the next fetch
+        });
+      } else {
+        print('Failed to fetch photos: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error fetching photos: $e');
     } finally {
       setState(() {
         _isLoading = false;
@@ -82,18 +111,24 @@ class _PhotoGridViewScreenState extends State<PhotoGridViewScreen> {
   }
 
   void _scrollListener() {
-    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent &&
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent &&
         !_isLoading) {
-      _fetchPhotos(); // Load more photos when reaching the bottom
+      _fetchPhotos();
     }
   }
+    
+  // String _albumNameMode(){
+  //   String album_name = _photos[1]['album'];
+  //   return album_name;
+  // }
 
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
         middle: Text(
-          widget.albumName, // Album name as the title
+          _photos[0]['album'], // Album name as the title
           style: TextStyle(color: CupertinoColors.black),
         ),
         trailing: CupertinoButton(
@@ -105,46 +140,86 @@ class _PhotoGridViewScreenState extends State<PhotoGridViewScreen> {
         ),
       ),
       child: SafeArea(
-        child: _buildPhotoGridView(), // Build the grid view of photos
+        child: Column(
+          children: [
+            Expanded(
+              child: _buildPhotoGrid(),
+            ),
+            if (_isLoading) CupertinoActivityIndicator(),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildPhotoGridView() {
+  Widget _buildPhotoGrid() {
     return GridView.builder(
-      controller: _scrollController, // Attach scroll controller
-      padding: EdgeInsets.all(16.0),
+      controller: _scrollController,
+      padding: EdgeInsets.all(8.0),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3, // Three photos per row
-        crossAxisSpacing: 16.0,
-        mainAxisSpacing: 16.0,
-        childAspectRatio: 1.0, // Square grid items
+        crossAxisCount: 3,
+        crossAxisSpacing: 8.0,
+        mainAxisSpacing: 8.0,
       ),
-      itemCount: _photos.length + (_isLoading ? 1 : 0), // Show loading indicator at the end
+      itemCount: _photos.length,
       itemBuilder: (context, index) {
-        if (index == _photos.length) {
-          return Center(child: CircularProgressIndicator()); // Loading indicator
-        }
         return GestureDetector(
           onTap: () {
-            // Navigate to the PhotoDetailScreen on press
             Navigator.push(
               context,
               CupertinoPageRoute(
-                builder: (context) => new PhotoDetailScreen(
-                  photos: _photos, 
+                fullscreenDialog: true,
+                builder: (context) => PhotoDetailScreen(
+                  photos: _photos,
                   intialIndex: index,
-                  cookie: _cookie ?? '',
                   serverUrl: _serverUrl ?? '',
+                  cookie: _cookie ?? '',
                 ),
               ),
             );
           },
-          child: _buildPhotoTile(_photos[index]),
+          child: buildImageFromCookie('$_serverUrl${_photos[index]['thumbnail_url']}', _cookie ?? ''),
         );
       },
     );
   }
+
+  Widget buildImageFromCookie(String imageUrl, String cookie) {
+    if (_imageCache.containsKey(imageUrl)) {
+      // Use cached image
+      return Image.memory(
+        _imageCache[imageUrl]!,
+        fit: BoxFit.cover,
+      );
+    } else {
+      // Fetch image and cache it
+      return FutureBuilder<http.Response>(
+        future: http.get(
+          Uri.parse(imageUrl),
+          headers: {'Cookie': cookie},
+        ),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return CupertinoActivityIndicator(); // Loading indicator
+          } else if (snapshot.hasError || snapshot.data == null || snapshot.data!.statusCode != 200) {
+            return Icon(
+              CupertinoIcons.exclamationmark_triangle, // Error icon
+              color: Colors.red,
+            );
+          } else {
+            // Cache the image data
+            _imageCache[imageUrl] = snapshot.data!.bodyBytes;
+
+            return Image.memory(
+              snapshot.data!.bodyBytes,
+              fit: BoxFit.cover,
+            );
+          }
+        },
+      );
+    }
+  }
+
 
   void _refreshScreen(){
     setState(() {//it will refresh the widget
@@ -219,25 +294,6 @@ class _PhotoGridViewScreenState extends State<PhotoGridViewScreen> {
           ),
         );
       },
-    );
-  }
-
-  // Widget for individual photo tiles
-  Widget _buildPhotoTile(dynamic photo) {
-    return Container(
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemGrey6,
-        borderRadius: BorderRadius.circular(8.0),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8.0),
-        child: CachedNetworkImage(
-          imageUrl: photo['urls']['thumb'], // Unsplash photo URL
-          placeholder: (context, url) => CircularProgressIndicator(),
-          errorWidget: (context, url, error) => Icon(CupertinoIcons.exclamationmark_triangle),
-          fit: BoxFit.cover,
-        ),
-      ),
     );
   }
 }

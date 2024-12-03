@@ -1,5 +1,8 @@
 import 'package:flutter/cupertino.dart';
-import 'package:photoapp/screens/photo_grip_view_screen.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'photo_grip_view_screen.dart'; // Import for navigation
+import '../widgets/db_helper.dart'; // For getting server and cookie
 
 class AlbumScreen extends StatefulWidget {
   @override
@@ -8,26 +11,64 @@ class AlbumScreen extends StatefulWidget {
 
 class _AlbumScreenState extends State<AlbumScreen> {
 
-  List<Map<String, String>> _albums = [
-    {'name': 'Album 1'},
-    {'name': 'Album 2'},
-    {'name': 'Album 3'}
-  ]; // Placeholder albums data
+  List<Map<String, dynamic>> _albums = []; // Placeholder albums data
 
-  String _selectedSortingOption = 'Random'; // Default sorting option
+  String _selectedSortingOption = 'new-to-old'; // Default sorting option
+  String? _serverUrl;
+  String? _cookie;
 
   bool _isLoading = true;
 
-  void _loadAlbums(){
-    //set the 
+  @override
+  void initState() {
+    super.initState();
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    try {
+      // Fetch server URL and cookie from the database
+      Map<String, String?> userData = await DbHelper.getCookieAndServer();
+      setState(() {
+        _serverUrl = userData['server'];
+        _cookie = userData['cookie'];
+      });
+      await _fetchAlbums();
+    } catch (e) {
+      print("Error initializing: $e");
+    }
+  }
+
+  Future<void> _fetchAlbums() async {
+    if (_serverUrl == null || _cookie == null) return;
+
+    try {
+      final response = await http.get(
+        Uri.parse("$_serverUrl/albums"),
+        headers: {'Cookie': _cookie!},
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+
+        final List<Map<String, dynamic>> parsedAlbums = data.map((album) => album as Map<String, dynamic>).toList();
+        setState(() {
+          _albums = parsedAlbums;
+          _isLoading = false;
+        });
+      } else {
+        print("Failed to fetch albums: ${response.statusCode}");
+      }
+    } catch (e) {
+      print("Error fetching albums: $e");
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
-        backgroundColor: CupertinoColors.systemGrey.withOpacity(0.0), // Transparent navigation bar
-        middle: Text('Albums', style: TextStyle(color: CupertinoColors.black)), // Title
+        middle: Text('Albums'),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
           child: Icon(CupertinoIcons.sort_down),
@@ -37,37 +78,48 @@ class _AlbumScreenState extends State<AlbumScreen> {
         ),
       ),
       child: SafeArea(
-        child: _buildAlbumsGridView(), // Always show grid view, with "Create New" as the last item
+        child: _isLoading
+            ? Center(child: CupertinoActivityIndicator())
+            : _buildAlbumsGridView(),
       ),
     );
   }
 
   // Grid view to display albums with "Create New" as the last item
   Widget _buildAlbumsGridView() {
-    return GridView.builder(
-      padding: EdgeInsets.all(16.0),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2, // Two albums per row
-        crossAxisSpacing: 16.0,
-        mainAxisSpacing: 16.0,
-        childAspectRatio: 1.0, // Equal width and height
-      ),
-      itemCount: _albums.length + 1, // One more item for "Create New"
-      itemBuilder: (context, index) {
-        if (index < _albums.length) {
-          return _buildAlbumBox(_albums[index]['name']!);
-        } else {
-          return _buildCreateNewBox();
-        }
-      },
-    );
-  }
+  return GridView.builder(
+    padding: EdgeInsets.all(16.0),
+    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+      crossAxisCount: 2,
+      crossAxisSpacing: 16.0,
+      mainAxisSpacing: 16.0,
+      childAspectRatio: 1.0,
+    ),
+    itemCount: _albums.length + 1, // Always add one for the "+" sign
+    itemBuilder: (context, index) {
+      if (index == _albums.length) {
+        // Last item is the "+" sign
+        return _buildCreateNewBox();
+      }
+      return _buildAlbumBox(_albums[index]);
+    },
+  );
+}
 
   // Display the box for each album
-  Widget _buildAlbumBox(String albumName) {
+  Widget _buildAlbumBox(Map<String, dynamic> album) {
     return GestureDetector(
       onTap: () {
-        _openAlbumDetails(albumName); // Open the album when tapped
+        // Navigate to PhotoGridViewScreen when an album is clicked
+        Navigator.push(
+          context,
+          CupertinoPageRoute(
+            builder: (context) => PhotoGridViewScreen(
+              albumid: album['id'].toString(),
+              selectedSortingOption: _selectedSortingOption,
+            ),
+          ),
+        );
       },
       child: Column(
         children: [
@@ -78,12 +130,19 @@ class _AlbumScreenState extends State<AlbumScreen> {
                 borderRadius: BorderRadius.circular(8.0),
               ),
               child: Center(
-                child: Icon(CupertinoIcons.photo, size: 50, color: CupertinoColors.black),
+                child: Icon(CupertinoIcons.photo, size: 50),
               ),
             ),
           ),
           SizedBox(height: 8.0),
-          Text(albumName, style: TextStyle(color: CupertinoColors.black)),
+          Text(
+            album['name'],
+            style: TextStyle(color: CupertinoColors.black),
+          ),
+          Text(
+            '${album['photo_count']} Photos',
+            style: TextStyle(color: CupertinoColors.inactiveGray, fontSize: 12),
+          ),
         ],
       ),
     );
@@ -133,6 +192,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
               onPressed: () {
                 setState(() {
                   _selectedSortingOption = 'random';
+                  _albums.shuffle();
                 });
                 Navigator.pop(context);
                 _refreshScreen();
@@ -143,6 +203,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
               onPressed: () {
                 setState(() {
                   _selectedSortingOption = 'a-z';
+                  _albums.sort((a, b) => a['name'].compareTo(b['name']));
                 });
                 Navigator.pop(context);
                 _refreshScreen();
@@ -153,6 +214,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
               onPressed: () {
                 setState(() {
                   _selectedSortingOption = 'z-a';
+                  _albums.sort((a, b) => b['name'].compareTo(a['name']));
                 });
                 Navigator.pop(context);
                 _refreshScreen();
@@ -163,6 +225,8 @@ class _AlbumScreenState extends State<AlbumScreen> {
               onPressed: () {
                 setState(() {
                   _selectedSortingOption = 'new-old';
+                  _albums.sort((a, b) => DateTime.parse(b['creation_date'])
+                    .compareTo(DateTime.parse(a['creation_date'])));
                 });
                 Navigator.pop(context);
                 _refreshScreen();
@@ -173,6 +237,8 @@ class _AlbumScreenState extends State<AlbumScreen> {
               onPressed: () {
                 setState(() {
                   _selectedSortingOption = 'old-new';
+                  _albums.sort((a, b) => DateTime.parse(a['creation_date'])
+                    .compareTo(DateTime.parse(b['creation_date'])));
                 });
                 Navigator.pop(context);
                 _refreshScreen();
@@ -188,31 +254,6 @@ class _AlbumScreenState extends State<AlbumScreen> {
           ),
         );
       },
-    );
-  }
-
-  // Function to open album details using CupertinoPageRoute
-  void _openAlbumDetails(String albumName) {
-    Navigator.push(
-      context,
-      CupertinoPageRoute(
-        builder: (context) => PhotoGridViewScreen(selectedSortingOption: _selectedSortingOption, albumName: albumName,),
-        
-        /*CupertinoPageScaffold(
-          navigationBar: CupertinoNavigationBar(
-            middle: Text(albumName), // Album title
-            leading: CupertinoButton(
-              padding: EdgeInsets.zero,
-              child: Icon(CupertinoIcons.back),
-              onPressed: () => Navigator.pop(context),
-            ),
-          ),
-          child: Center(
-            child: Text('Details for $albumName'), // Placeholder for album details
-          ),
-        ),
-        */
-      ),
     );
   }
 
@@ -237,18 +278,41 @@ class _AlbumScreenState extends State<AlbumScreen> {
             ),
             CupertinoDialogAction(
               child: Text('Create'),
-              onPressed: () {
+              onPressed: () async {
                 if (_controller.text.isNotEmpty) {
-                  setState(() {
-                    _albums.add({'name': _controller.text});
-                  });
+                  try {
+                    await _addNewAlbum(_controller.text);
+                    Navigator.pop(context);
+                    _refreshScreen();
+                  } catch (e) {
+                    print("Error adding new album: $e");
+                  }
                 }
-                Navigator.pop(context);
               },
             ),
           ],
         );
       },
     );
+  }
+
+  Future<void> _addNewAlbum(String albumName) async {
+    if (_serverUrl == null || _cookie == null) return;
+
+    try {
+      final response = await http.get(
+        Uri.parse("$_serverUrl/album/action?action=add&album_id=nothing&album_name=$albumName"),
+        headers: {'Cookie': _cookie!},
+      );
+
+      if (response.statusCode == 200) {
+        print("Album added successfully: $albumName");
+        await _fetchAlbums(); // Refresh albums after adding
+      } else {
+        print("Failed to add album: ${response.statusCode}");
+      }
+    } catch (e) {
+      print("Error adding album: $e");
+    }
   }
 }
