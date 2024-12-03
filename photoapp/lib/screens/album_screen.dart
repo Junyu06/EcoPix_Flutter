@@ -196,7 +196,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
     Navigator.push(
       context,
       CupertinoPageRoute(
-        builder: (context) => PhotoGridViewScreen(selectedSortingOption: _selectedSortingOption, albumName: albumName, url: 'url'),
+        builder: (context) => PhotoGridViewScreen(selectedSortingOption: _selectedSortingOption, albumName: albumName,),
         
         /*CupertinoPageScaffold(
           navigationBar: CupertinoNavigationBar(

@@ -12,10 +12,13 @@ import '../widgets/db_helper.dart';
 class PhotoDetailScreen extends StatefulWidget{
   final List<dynamic> photos;//list of photo for pass in
   final int intialIndex; //index of the photo to display first
+  final String serverUrl;  // Add serverUrl
+  final String cookie;     // Add cookie
+
 
   const PhotoDetailScreen(
     {
-      required this.photos, required this.intialIndex
+      required this.photos, required this.intialIndex,required this.serverUrl,required this.cookie,
     }
   );
 
@@ -30,6 +33,8 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen>{
   final Map<String, Uint8List> _imageCache = {}; // Local in-memory cache
   String? _serverUrl;
   String? _cookie;
+  
+
 
   @override
   void initState(){
@@ -60,8 +65,9 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen>{
   void _preloadImages(int index){
     for (int i = index -3; i<= index+3; i++){
       if (i>=0 && i< widget.photos.length){
-        buildImageFromCookie('$_serverUrl${widget.photos[i]['photo_url']}', _cookie ?? '');
-        //precacheImage(NetworkImage(widget.photos[i]['urls']['full']), context);
+        if (_serverUrl!= null){
+          buildImageFromCookie('$_serverUrl${widget.photos[i]['photo_url']}', _cookie ?? '');
+        }
       }
     }
   }
@@ -98,7 +104,7 @@ Widget build(BuildContext context) {
         },
       ),
       middle: Text(
-        'Photo ${currentIndex + 1}', 
+        '${widget.photos[currentIndex]['filename']}', 
         style: TextStyle(color: CupertinoColors.white), // White text
       ),
     ) : null,

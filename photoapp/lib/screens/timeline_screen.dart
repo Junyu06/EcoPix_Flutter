@@ -93,21 +93,27 @@ class _TimelineScreenState extends State<TimelineScreen> {
   }
 }
 
-  void _scrollListener() {
-    if (_scrollController.position.pixels >=
-            _scrollController.position.maxScrollExtent &&
-        !_isLoading) {
-      _fetchPhotos();
-    }
+void _scrollListener() {
+  if (_scrollController.position.pixels >=
+          _scrollController.position.maxScrollExtent &&
+      !_isLoading) {
+    _fetchPhotos();
+  }
 
-    // Update navigation bar title
-    if (_photos.isNotEmpty && _scrollController.hasClients) {
-      double offset = _scrollController.offset;
-      int visibleIndex = (offset / 150).floor(); // Estimate visible photo index
-      if (visibleIndex >= 0 && visibleIndex < _photos.length) {
-        String? date = _photos[visibleIndex]['creation_date'];
-        if (date != null) {
-          String formattedDate = date.split('T')[0]; // Extract YYYY-MM-DD
+  // Update navigation bar title
+  if (_photos.isNotEmpty && _scrollController.hasClients) {
+    double offset = _scrollController.offset;
+    double itemHeight = calculateItemHeight(context, 3, 1.0); // Assuming 3 columns and 1.0 aspect ratio
+    int visibleIndex = (offset / itemHeight).floor() * 3; // Multiply by columns per row
+
+    // Debugging output
+    //print('Offset: $offset, ItemHeight: $itemHeight, VisibleIndex: $visibleIndex');
+
+    if (visibleIndex >= 0 && visibleIndex < _photos.length) {
+      String? date = _photos[visibleIndex]['creation_date'];
+      if (date != null) {
+        String formattedDate = date.split('T')[0]; // Extract YYYY-MM-DD
+        if (_navigationBarTitle != formattedDate) {
           setState(() {
             _navigationBarTitle = formattedDate;
           });
@@ -115,6 +121,15 @@ class _TimelineScreenState extends State<TimelineScreen> {
       }
     }
   }
+}
+
+double calculateItemHeight(BuildContext context, int crossAxisCount, double childAspectRatio) {
+  double totalWidth = MediaQuery.of(context).size.width;
+  double itemWidth = totalWidth / crossAxisCount;
+  return itemWidth / childAspectRatio;
+}
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -155,6 +170,8 @@ class _TimelineScreenState extends State<TimelineScreen> {
                 builder: (context) => PhotoDetailScreen(
                   photos: _photos,
                   intialIndex: index,
+                  serverUrl: _serverUrl ?? '',
+                  cookie: _cookie ?? '',
                 ),
               ),
             );

@@ -1,18 +1,17 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import '../widgets/db_helper.dart';
 import 'package:photoapp/screens/photo_detail.dart'; // Import PhotoDetailScreen
 import 'package:photoapp/widgets/unsplash_api.dart'; // Import Unsplash API
 
 class PhotoGridViewScreen extends StatefulWidget {
   final String selectedSortingOption; // Sorting option
   final String albumName; // Album name
-  final String url; // For later getting own server
 
   PhotoGridViewScreen({
     required this.selectedSortingOption,
     required this.albumName,
-    required this.url,
   });
 
   @override
@@ -26,6 +25,8 @@ class _PhotoGridViewScreenState extends State<PhotoGridViewScreen> {
   bool _isLoading = false; // Loading state
   late ScrollController _scrollController;
   ServerConnection API = ServerConnection(); // Unsplash API instance
+  String? _serverUrl;
+  String? _cookie;
 
   String _selectedSortingOption = 'Random'; // Default sorting option
 
@@ -35,6 +36,20 @@ class _PhotoGridViewScreenState extends State<PhotoGridViewScreen> {
     _scrollController = ScrollController();
     _scrollController.addListener(_scrollListener);
     _fetchPhotos(); // Fetch initial photos
+  }
+
+  Future<void> _initialize() async {
+    try {
+      // Fetch server URL and cookie
+      Map<String, String?> userData = await DbHelper.getCookieAndServer();
+      setState(() {
+        _serverUrl = userData['server'];
+        _cookie = userData['cookie'];
+      });
+      await _fetchPhotos();
+    } catch (e) {
+      print('Error initializing: $e');
+    }
   }
 
   @override
@@ -119,6 +134,8 @@ class _PhotoGridViewScreenState extends State<PhotoGridViewScreen> {
                 builder: (context) => new PhotoDetailScreen(
                   photos: _photos, 
                   intialIndex: index,
+                  cookie: _cookie ?? '',
+                  serverUrl: _serverUrl ?? '',
                 ),
               ),
             );
