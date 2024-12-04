@@ -8,6 +8,7 @@ import 'option_screen.dart';
 import 'exif_photo_screen.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart'; // For LatLng
+import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 
 class MetadataScreen extends StatefulWidget {
   @override
@@ -50,34 +51,49 @@ Future<void> _fetchGpsData() async {
       Uri.parse("$_serverUrl/photoexif?exif_type=GPS&action=list"),
       headers: {'Cookie': _cookie!},
     );
-    print('Response: ${response.body}');
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
-      final List<dynamic> clusters = data['clusters']; // Correct key is 'clusters'
+      final List<dynamic> clusters = data['clusters']; // Ensure correct key is used
+
       setState(() {
-        _markers = clusters
-            .map((cluster) => Marker(
-                  point: LatLng(
-                      cluster['cluster_latitude'], cluster['cluster_longitude']),
-                  width: 30,
-                  height: 30,
-                  rotate: true,
-                  child: Icon(
-                    CupertinoIcons.pin,
-                    color: Colors.red,
-                    size: 30.0,
-                  ),
-                ))
-            .toList();
-      });
+  _markers = clusters.map((cluster) {
+    return Marker(
+      point: LatLng(
+        cluster['cluster_latitude'],
+        cluster['cluster_longitude'],
+      ),
+      width: 40,
+      height: 40,
+      child: GestureDetector(
+        onTap: () {
+          print('Cluster tapped with ID: ${cluster['id']}');
+          Navigator.push(context, CupertinoPageRoute(
+                builder: (context) => PhotoGridViewScreen(
+                  selectedSortingOption: 'new-to-old',
+                  exifType: 'GPS',
+                  value: cluster['id'].toString(),
+                ),
+              ),);
+          // Add navigation or actions for the tapped cluster here
+        },
+        child: Icon(
+          CupertinoIcons.map_pin,
+          color: const Color.fromARGB(255, 0, 0, 0),
+          size: 30,
+        ),
+      ),
+    );
+  }).toList();
+});
+
     } else {
       print('Failed to fetch GPS data: ${response.statusCode}');
-      print('Error: ${response.body}');
     }
   } catch (e) {
     print('Error fetching GPS data: $e');
   }
 }
+
 
 
   @override
@@ -120,23 +136,58 @@ Future<void> _fetchGpsData() async {
     }
   }
 
-  Widget _buildGpsScreen() {
-    return FlutterMap(
-      options: MapOptions(
-        initialCenter: _markers.isNotEmpty
-          ? _markers[0].point 
+Widget _buildGpsScreen() {
+  return FlutterMap(
+    options: MapOptions(
+      initialCenter: _markers.isNotEmpty
+          ? _markers[0].point
           : LatLng(40.752495, -73.712736),
-          initialZoom: 10,
+      initialZoom: 10,
+      maxZoom: 18,
+      minZoom: 3,
+    ),
+    children: [
+      TileLayer(
+        urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        userAgentPackageName: 'com.example.app',
       ),
-      children: [
-        TileLayer(
-          urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-          userAgentPackageName: 'com.example.app',
+      MarkerClusterLayerWidget(
+        options: MarkerClusterLayerOptions(
+          maxClusterRadius: 45,
+          size: Size(40, 40),
+          // fitBoundsOptions: FitBoundsOptions(
+          //   padding: EdgeInsets.all(50),
+          // ),
+          markers: _markers,
+          builder: (context, cluster) {
+            return Container(
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.8),
+                shape: BoxShape.circle,
+              ),
+              child: Text(
+                cluster.length.toString(),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            );
+          },
+          showPolygon: false, // Set to true if you want to highlight clusters with a polygon
+          polygonOptions: PolygonOptions(
+            borderColor: Colors.blueAccent,
+            color: Colors.black12,
+            borderStrokeWidth: 3,
+          ),
         ),
-        MarkerLayer(markers: _markers),
-      ],
-    );
-  }
+      ),
+    ],
+  );
+}
+
 
   Widget _photoScreen() {
     return ListView(
