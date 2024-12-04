@@ -96,29 +96,39 @@ class _UserScreenState extends State<UserScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: Text('User Screen'),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          if (isLoading)
-            CupertinoActivityIndicator() // Show a loading spinner while fetching data
-          else
-            Text(message ?? 'No content available'), // Show the fetched message
+ @override
+Widget build(BuildContext context) {
+  return CupertinoPageScaffold(
+    navigationBar: CupertinoNavigationBar(
+      middle: Text('User Screen'),
+    ),
+    child: SafeArea(
+      child: Container(
+        width: double.infinity, // Take full width
+        height: double.infinity, // Take full height
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            if (isLoading)
+              CupertinoActivityIndicator() // Show a loading spinner while fetching data
+            else
+              Text(
+                message ?? 'No content available',
+                textAlign: TextAlign.center, // Center align the text
+              ), // Show the fetched message
 
-          SizedBox(height: 20), // Add spacing between the text and the button
+            SizedBox(height: 20), // Add spacing between the text and the button
 
-          CupertinoButton.filled(
-            child: Text('Start Indexing'),
-            onPressed: () => _startIndexing(context),
-          ),
-        ],
+            CupertinoButton.filled(
+              child: Text('Start Indexing'),
+              onPressed: () => _startIndexing(context),
+            ),
+          ],
+        ),
       ),
-    );
-  }
+    ),
+  );
+}
+
 }

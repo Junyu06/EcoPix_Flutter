@@ -142,7 +142,7 @@ Widget _buildGpsScreen() {
       initialCenter: _markers.isNotEmpty
           ? _markers[0].point
           : LatLng(40.752495, -73.712736),
-      initialZoom: 10,
+      initialZoom: 6,
       maxZoom: 18,
       minZoom: 3,
     ),
