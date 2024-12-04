@@ -43,42 +43,42 @@ class _MetadataScreen extends State<MetadataScreen> {
   }
 
 Future<void> _fetchGpsData() async {
-    if (_serverUrl == null || _cookie == null) return;
+  if (_serverUrl == null || _cookie == null) return;
 
-    try {
-      final response = await http.get(
-        Uri.parse("$_serverUrl/photoexif?exif_type=GPS&action=photo"),
-        headers: {'Cookie': _cookie!},
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final List<dynamic> photos = data['photos'];
-        setState(() {
-          _markers = photos
-              .where((photo) =>
-                  photo['gps_latitude'] != double && photo['gps_longitude'] != double)
-              .map((photo) => Marker(
-                    point: LatLng(photo['gps_latitude'], photo['gps_longitude']),
-                    width: 30,
-                    height: 30,
-                    rotate: true, //add this if rotation is
-                    child: Icon(
-                      CupertinoIcons.pin,
-                      color: Colors.red,
-                      size: 30.0,
-                    ),
-                  ))
-              .toList();
-        });
-      } else {
-        print('Failed to fetch GPS data: ${response.statusCode}');
-        print('Error: ${response.body}');
-      }
-    } catch (e) {
-      print('Error fetching GPS data: $e');
+  try {
+    final response = await http.get(
+      Uri.parse("$_serverUrl/photoexif?exif_type=GPS&action=list"),
+      headers: {'Cookie': _cookie!},
+    );
+    print('Response: ${response.body}');
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      final List<dynamic> clusters = data['clusters']; // Correct key is 'clusters'
+      setState(() {
+        _markers = clusters
+            .map((cluster) => Marker(
+                  point: LatLng(
+                      cluster['cluster_latitude'], cluster['cluster_longitude']),
+                  width: 30,
+                  height: 30,
+                  rotate: true,
+                  child: Icon(
+                    CupertinoIcons.pin,
+                    color: Colors.red,
+                    size: 30.0,
+                  ),
+                ))
+            .toList();
+      });
+    } else {
+      print('Failed to fetch GPS data: ${response.statusCode}');
+      print('Error: ${response.body}');
     }
+  } catch (e) {
+    print('Error fetching GPS data: $e');
   }
+}
+
 
   @override
   Widget build(BuildContext context) {
@@ -125,7 +125,7 @@ Future<void> _fetchGpsData() async {
       options: MapOptions(
         initialCenter: _markers.isNotEmpty
           ? _markers[0].point 
-          : LatLng(51.509364, -0.128928),
+          : LatLng(40.752495, -73.712736),
           initialZoom: 10,
       ),
       children: [
