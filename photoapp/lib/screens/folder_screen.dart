@@ -2,8 +2,10 @@ import 'package:flutter/cupertino.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:photoapp/screens/photo_detail.dart';
 import '../widgets/db_helper.dart';
 import 'dart:typed_data';
+import 'photo_detail.dart';
 
 class FolderScreen extends StatefulWidget {
   @override
@@ -162,7 +164,7 @@ Widget _buildPhotosGridView() {
     ),
     itemCount: _photos.length,
     itemBuilder: (context, index) {
-      return _buildPhotoBox(_photos[index]);
+      return _buildPhotoBox(_photos[index],index);
     },
   );
 }
@@ -202,10 +204,18 @@ Widget _buildPhotosGridView() {
 }
 
 
-  Widget _buildPhotoBox(Map<String, dynamic> photo) {
+  Widget _buildPhotoBox(Map<String, dynamic> photo, int index) {
     return GestureDetector(
       onTap: () {
-        // Navigate to PhotoDetailScreen
+        Navigator.push(context, CupertinoPageRoute(
+              fullscreenDialog: true,
+              builder: (context) => PhotoDetailScreen(
+                photos: _photos,
+                intialIndex: index,
+                serverUrl: _serverUrl ?? '',
+                cookie: _cookie ?? '',
+              ),
+            ),);
       },
       child: Container(
         decoration: BoxDecoration(

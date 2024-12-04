@@ -66,7 +66,7 @@ Future<void> _fetchGpsData() async {
       height: 40,
       child: GestureDetector(
         onTap: () {
-          print('Cluster tapped with ID: ${cluster['id']}');
+          //print('Cluster tapped with ID: ${cluster['id']}');
           Navigator.push(context, CupertinoPageRoute(
                 builder: (context) => PhotoGridViewScreen(
                   selectedSortingOption: 'new-to-old',

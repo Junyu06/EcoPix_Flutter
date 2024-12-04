@@ -246,26 +246,6 @@ void _showInfo() {
     //nothing
   }
 
-  // void _showStarRating() {//change it later
-  //   showCupertinoModalPopup(
-  //     context: context,
-  //     builder: (BuildContext context) {
-  //       return CupertinoActionSheet(
-  //         title: Text('Rate this photo'),
-  //         actions: List.generate(5, (index) {
-  //           return CupertinoButton(
-  //             child: Text('${index + 1} Stars'),
-  //             onPressed: () {
-  //               _setRating(index + 1);
-  //               Navigator.of(context).pop();
-  //             },
-  //           );
-  //         }),
-  //       );
-  //     },
-  //   );
-  // }
-
   void _showAlbumAction() {
   showCupertinoModalPopup(
     context: context,
