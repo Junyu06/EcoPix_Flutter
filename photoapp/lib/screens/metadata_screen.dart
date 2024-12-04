@@ -6,6 +6,8 @@ import 'dart:typed_data'; // For Uint8List
 import '../widgets/db_helper.dart';
 import 'option_screen.dart';
 import 'exif_photo_screen.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart'; // For LatLng
 
 class MetadataScreen extends StatefulWidget {
   @override
@@ -18,6 +20,7 @@ class _MetadataScreen extends State<MetadataScreen> {
   String? _serverUrl; // Replace with your actual server URL
   String? _cookie; // Replace with the actual session cookie
   final Map<String, Uint8List> _imageCache = {}; // Local in-memory cache
+  List<Marker> _markers =[];
 
   @override
   void initState(){
@@ -33,8 +36,47 @@ class _MetadataScreen extends State<MetadataScreen> {
         _serverUrl = userData['server'];
         _cookie = userData['cookie'];
       });
+      await _fetchGpsData();
     } catch (e) {
       print("Error initializing: $e");
+    }
+  }
+
+Future<void> _fetchGpsData() async {
+    if (_serverUrl == null || _cookie == null) return;
+
+    try {
+      final response = await http.get(
+        Uri.parse("$_serverUrl/photoexif?exif_type=GPS&action=photo"),
+        headers: {'Cookie': _cookie!},
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final List<dynamic> photos = data['photos'];
+        setState(() {
+          _markers = photos
+              .where((photo) =>
+                  photo['gps_latitude'] != double && photo['gps_longitude'] != double)
+              .map((photo) => Marker(
+                    point: LatLng(photo['gps_latitude'], photo['gps_longitude']),
+                    width: 30,
+                    height: 30,
+                    rotate: true, //add this if rotation is
+                    child: Icon(
+                      CupertinoIcons.pin,
+                      color: Colors.red,
+                      size: 30.0,
+                    ),
+                  ))
+              .toList();
+        });
+      } else {
+        print('Failed to fetch GPS data: ${response.statusCode}');
+        print('Error: ${response.body}');
+      }
+    } catch (e) {
+      print('Error fetching GPS data: $e');
     }
   }
 
@@ -71,10 +113,29 @@ class _MetadataScreen extends State<MetadataScreen> {
 
   Widget _buildContent() {
     if (_selectedSegment == 'Folder') {
-      return Center(child: Text('GPS Screen Coming Soon'));
+      //return Center(child: Text('GPS Screen Coming Soon'));
+      return _buildGpsScreen();
     } else {
       return _photoScreen();
     }
+  }
+
+  Widget _buildGpsScreen() {
+    return FlutterMap(
+      options: MapOptions(
+        initialCenter: _markers.isNotEmpty
+          ? _markers[0].point 
+          : LatLng(51.509364, -0.128928),
+          initialZoom: 10,
+      ),
+      children: [
+        TileLayer(
+          urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+          userAgentPackageName: 'com.example.app',
+        ),
+        MarkerLayer(markers: _markers),
+      ],
+    );
   }
 
   Widget _photoScreen() {
